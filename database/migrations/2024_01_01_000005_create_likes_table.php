@@ -1,0 +1,36 @@
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    /**
+     * Run the migrations.
+     */
+    public function up(): void
+    {
+        Schema::create('likes', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('user_id')->constrained()->onDelete('cascade');
+
+            // Polimorfismo: Para dar like a Movies, Series, Episodes, o Comments
+            $table->unsignedBigInteger('likeable_id');
+            $table->string('likeable_type');
+
+            $table->timestamps();
+
+            // Evitar duplicados: Un usuario solo puede dar like una vez a algo
+            $table->unique(['user_id', 'likeable_id', 'likeable_type']);
+        });
+    }
+
+    /**
+     * Reverse the migrations.
+     */
+    public function down(): void
+    {
+        Schema::dropIfExists('likes');
+    }
+};
