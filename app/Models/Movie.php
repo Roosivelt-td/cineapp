@@ -12,15 +12,22 @@ class Movie extends Model
     protected $fillable = [
         'title', 'description', 'poster_url', 'video_url',
         'is_adult', 'release_year', 'duration',
-        'authors', 'genres', 'views_count', 'likes_count', 'rating_avg'
+        'authors', 'views_count', 'likes_count', 'rating_avg'
     ];
 
     protected $casts = [
         'is_adult' => 'boolean',
         'authors' => 'array',
-        'genres' => 'array',
         'rating_avg' => 'float',
     ];
+
+    /**
+     * Géneros de la película (Relación muchos a muchos).
+     */
+    public function genres()
+    {
+        return $this->belongsToMany(Genre::class);
+    }
 
     // Relación polimórfica: Comentarios
     public function comments()

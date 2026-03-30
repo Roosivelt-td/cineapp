@@ -16,14 +16,15 @@ return new class extends Migration
             $table->string('title');
             $table->text('description')->nullable();
             $table->string('poster_url')->nullable();
-            $table->enum('type', ['serie', 'novela']); // 'serie' o 'novela'
+            $table->string('banner_url')->nullable(); // Añadido aquí
+            $table->enum('type', ['serie', 'novela', 'anime'])->default('serie'); // Añadido anime
             $table->year('release_year')->nullable();
-            $table->json('authors')->nullable(); // Autores/Actores
-            $table->json('genres')->nullable(); // Géneros
-            $table->boolean('is_adult')->default(false); // Por si acaso hay series +18
+            $table->json('authors')->nullable();
+            $table->json('genres')->nullable();
+            $table->boolean('is_adult')->default(false);
             $table->unsignedBigInteger('views_count')->default(0);
             $table->unsignedBigInteger('likes_count')->default(0);
-            $table->decimal('rating_avg', 3, 2)->default(0); // 0.00 a 5.00
+            $table->decimal('rating_avg', 3, 2)->default(0);
             $table->timestamps();
         });
     }

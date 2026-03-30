@@ -5,92 +5,144 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use App\Models\Series;
+use App\Models\Genre;
+use App\Models\Season;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Facades\Schema;
 
 class SeriesController extends Controller
 {
-    /**
-     * Muestra la página de gestión filtrada por tipo.
-     */
     public function index(Request $request)
     {
-        // Determinamos qué tipo estamos viendo basado en la URL o parámetro
-        // Por defecto 'serie', pero puede ser 'novela' o 'anime'
-        $type = $request->query('type', 'serie');
+        // Detectamos el tipo desde la ruta (definido en web.php defaults)
+        $type = $request->route('type') ?? $request->get('type', 'serie');
 
-        // Título dinámico para la vista
-        $pageTitle = ucfirst($type) . 's'; // Ej: Series, Novelas
-        if ($type === 'anime') $pageTitle = 'Animes';
+        $pageTitle = $type === 'anime' ? 'Animes' : ucfirst($type) . 's';
+        $genres = Genre::orderBy('name')->get();
 
-        return view('admin.series.index', compact('type', 'pageTitle'));
+        return view('admin.series.index', compact('type', 'pageTitle', 'genres'));
     }
 
-    /**
-     * API: Obtiene la lista filtrada por tipo.
-     */
+    public function showContent(Series $series)
+    {
+        if (!Schema::hasTable('seasons')) {
+            return "Error: Ejecuta 'php artisan migrate' para crear las tablas de temporadas.";
+        }
+
+        $series->load(['seasons' => function($q) {
+            $q->orderBy('number', 'asc');
+        }, 'seasons.episodes' => function($q) {
+            $q->orderBy('number', 'asc');
+        }]);
+
+        return view('admin.series.content', compact('series'));
+    }
+
     public function getSeries(Request $request)
     {
-        $type = $request->query('type', 'serie');
-        $query = Series::where('type', $type);
+        $type = $request->get('type', 'serie');
+        $query = Series::with('genres')->where('type', $type);
 
-        if ($request->has('search')) {
+        if ($request->filled('search')) {
             $search = $request->input('search');
             $query->where(function($q) use ($search) {
                 $q->where('title', 'like', "%{$search}%")
-                  ->orWhere('description', 'like', "%{$search}%")
-                  ->orWhere('release_year', 'like', "%{$search}%");
+                  ->orWhere('description', 'like', "%{$search}%");
             });
         }
 
-        $series = $query->withCount('seasons', 'episodes') // Contamos temporadas y caps
-                        ->orderBy('created_at', 'desc')
-                        ->paginate(10);
-
-        return response()->json($series);
+        return response()->json($query->withCount('seasons')->orderBy('created_at', 'desc')->paginate(10));
     }
 
-    /**
-     * API: Almacena una nueva serie/novela/anime.
-     */
     public function store(Request $request)
     {
-        $validated = $request->validate([
+        $validator = Validator::make($request->all(), [
             'title' => 'required|string|max:255',
             'type' => 'required|in:serie,novela,anime',
-            'description' => 'nullable|string',
-            'poster_url' => 'nullable|url',
-            'release_year' => 'nullable|integer',
-            'genres' => 'nullable|array',
+            'poster_url' => 'nullable|string',
+            'banner_url' => 'nullable|string',
         ]);
 
-        $series = Series::create($validated);
+        if ($validator->fails()) return response()->json(['errors' => $validator->errors()], 422);
 
-        return response()->json($series, 201);
+        try {
+            return DB::transaction(function () use ($request) {
+                $series = new Series();
+                $series->title = $request->title;
+                $series->type = $request->type;
+                $series->description = $request->description;
+                $series->poster_url = $request->poster_url;
+                $series->banner_url = $request->banner_url;
+                $series->release_year = $request->release_year ?: null;
+                $series->save();
+
+                if ($request->has('genres')) $series->genres()->sync($request->genres);
+
+                return response()->json($series->load('genres'), 201);
+            });
+        } catch (\Exception $e) {
+            return response()->json(['message' => 'Error DB', 'debug' => $e->getMessage()], 500);
+        }
     }
 
-    /**
-     * API: Actualiza.
-     */
     public function update(Request $request, Series $series)
     {
-        $validated = $request->validate([
+        $validator = Validator::make($request->all(), [
             'title' => 'required|string|max:255',
-            'description' => 'nullable|string',
-            'poster_url' => 'nullable|url',
-            'release_year' => 'nullable|integer',
-            'genres' => 'nullable|array',
         ]);
 
-        $series->update($validated);
+        if ($validator->fails()) return response()->json(['errors' => $validator->errors()], 422);
 
-        return response()->json($series);
+        try {
+            return DB::transaction(function () use ($request, $series) {
+                $series->title = $request->title;
+                $series->description = $request->description;
+                $series->poster_url = $request->poster_url;
+                $series->banner_url = $request->banner_url;
+                $series->release_year = $request->release_year ?: null;
+                $series->save();
+
+                if ($request->has('genres')) {
+                    $series->genres()->sync($request->genres);
+                }
+
+                return response()->json($series->load('genres'));
+            });
+        } catch (\Exception $e) {
+            return response()->json(['message' => 'Error DB', 'debug' => $e->getMessage()], 500);
+        }
     }
 
-    /**
-     * API: Elimina.
-     */
     public function destroy(Series $series)
     {
-        $series->delete();
-        return response()->json(['message' => 'Eliminado correctamente.']);
+        try {
+            $series->genres()->detach();
+            $series->delete();
+            return response()->json(['message' => 'Eliminado']);
+        } catch (\Exception $e) {
+            return response()->json(['message' => 'Error DB', 'debug' => $e->getMessage()], 500);
+        }
+    }
+
+    public function storeSeason(Request $request, Series $series)
+    {
+        $validator = Validator::make($request->all(), [
+            'number' => 'required|integer|min:1',
+        ]);
+
+        if ($validator->fails()) return response()->json(['errors' => $validator->errors()], 422);
+
+        try {
+            $season = new Season();
+            $season->series_id = $series->id;
+            $season->number = (int)$request->number;
+            $season->name = $request->name ?: ('Temporada ' . $request->number);
+            $season->save();
+            return response()->json($season, 201);
+        } catch (\Exception $e) {
+            return response()->json(['message' => 'Error DB', 'debug' => $e->getMessage()], 500);
+        }
     }
 }

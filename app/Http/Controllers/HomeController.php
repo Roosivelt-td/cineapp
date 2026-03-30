@@ -5,41 +5,45 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use App\Models\Movie;
 use App\Models\Series;
+use App\Models\Genre;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\DB;
 
 class HomeController extends Controller
 {
     /**
-     * Muestra la página de inicio con películas destacadas y series.
+     * Muestra la página de inicio con contenido categorizado.
      */
     public function index()
     {
-        $movieQuery = Movie::query();
-        $seriesQuery = Series::query();
-        $featuredQuery = Movie::query();
+        $featuredMovie = Movie::where('is_adult', false)->inRandomOrder()->first();
 
-        if (!Auth::check()) {
-            $movieQuery->where('is_adult', false);
-            $seriesQuery->where('is_adult', false);
-            $featuredQuery->where('is_adult', false);
+        // Obtener todos los géneros que tienen contenido asociado
+        $genres = Genre::whereHas('movies')
+            ->orWhereHas('series')
+            ->orderBy('name')
+            ->get();
+
+        // Organizar el contenido por género y tipo
+        $sections = [];
+        foreach ($genres as $genre) {
+            $movies = $genre->movies()->where('is_adult', false)->take(15)->get();
+            $series = $genre->series()->where('type', 'serie')->where('is_adult', false)->take(15)->get();
+            $novelas = $genre->series()->where('type', 'novela')->where('is_adult', false)->take(15)->get();
+            $animes = $genre->series()->where('type', 'anime')->where('is_adult', false)->take(15)->get();
+
+            if ($movies->count() > 0 || $series->count() > 0 || $novelas->count() > 0 || $animes->count() > 0) {
+                $sections[] = [
+                    'genre' => $genre,
+                    'movies' => $movies,
+                    'series' => $series,
+                    'novelas' => $novelas,
+                    'animes' => $animes,
+                ];
+            }
         }
 
-        $recentMovies = $movieQuery->orderBy('created_at', 'desc')->take(10)->get();
-        $popularSeries = $seriesQuery->orderBy('views_count', 'desc')->take(10)->get();
+        $allGenres = Genre::orderBy('name')->pluck('name');
 
-        // Asegurarnos de que haya al menos una película para destacar
-        if ($featuredQuery->count() > 0) {
-            $featuredMovie = $featuredQuery->inRandomOrder()->first();
-        } else {
-            $featuredMovie = null; // O una película por defecto si lo prefieres
-        }
-
-        // Obtener todos los géneros únicos de películas y series
-        $movieGenres = Movie::select('genres')->distinct()->get()->pluck('genres')->flatten();
-        $seriesGenres = Series::select('genres')->distinct()->get()->pluck('genres')->flatten();
-        $allGenres = $movieGenres->merge($seriesGenres)->unique()->sort()->values();
-
-        return view('home', compact('recentMovies', 'popularSeries', 'featuredMovie', 'allGenres'));
+        return view('home', compact('featuredMovie', 'sections', 'allGenres'));
     }
 }

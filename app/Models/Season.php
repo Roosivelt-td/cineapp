@@ -10,16 +10,22 @@ class Season extends Model
     use HasFactory;
 
     protected $fillable = [
-        'series_id', 'name', 'number',
+        'series_id',
+        'name',
+        'number'
     ];
 
-    // Relación: Una temporada pertenece a una serie
+    /**
+     * Una temporada pertenece a una serie.
+     */
     public function series()
     {
         return $this->belongsTo(Series::class);
     }
 
-    // Relación: Una temporada tiene muchos capítulos
+    /**
+     * Una temporada tiene muchos episodios.
+     */
     public function episodes()
     {
         return $this->hasMany(Episode::class);
